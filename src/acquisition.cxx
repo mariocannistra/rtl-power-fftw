@@ -158,6 +158,8 @@ AuxData::AuxData(const Params& params) {
 Plan::Plan(Params& params_, int actual_samplerate_) :
   actual_samplerate(actual_samplerate_), params(params_)
 {
+  double min_overhang;
+
   // Calculate the number of repeats according to the true sample rate.
   if (params.integration_time_isSet)
     params.repeats = ceil(actual_samplerate * params.integration_time / params.N);
@@ -175,11 +177,25 @@ Plan::Plan(Params& params_, int actual_samplerate_) :
     }
   }
 
+  /*
+    the crop percentage will be used to:
+      - in function write_data(): to exclude from output half of (cropPercentage * bins) on each side of the FFT
+      - in this function: only if hops are performed: calculate a frequency offset by which the center frequency
+        of each hop scan should be lowered in order to produce a continuous and non-overlapping
+        series of bins for the overall frequency range
+  */
   // Make a plan of frequency hopping.
   // We're stuffing a vector full of frequencies that we wish to eventually tune to.
   if (params.freq_hopping_isSet) {
-    double min_overhang = actual_samplerate*params.min_overlap/100;
-    int hops = ceil((double(params.stopfreq - params.startfreq) - min_overhang) / (double(actual_samplerate) - min_overhang));
+    min_overhang = actual_samplerate*params.min_overlap/100;
+    if( params.cropPercentage > 0 )
+    {
+      // since overlap and crop are mutually exclusive options,
+      // I'm reusing the min_overhang variable for the crop frequency offset mentioned above
+      min_overhang = actual_samplerate*params.cropPercentage/100;
+      cropFreqOffset = min_overhang;  // will bring this out as metadata
+    }
+    hops = ceil((double(params.stopfreq - params.startfreq) - min_overhang) / (double(actual_samplerate) - min_overhang));
     if (hops > 1) {
       int overhang = (hops*actual_samplerate - (params.stopfreq - params.startfreq)) / (hops - 1);
       freqs_to_tune.push_back(params.startfreq + actual_samplerate/2.0);
@@ -363,6 +379,7 @@ void Acquisition::write_data() const {
   double pwrdb = 0.0;
   float fpwrdb = 0.0;
   double freq = 0.0;
+  int initialBIN, finalBIN;
 
   if(!params.matrixMode) {
     // Print the header
@@ -387,8 +404,30 @@ void Acquisition::write_data() const {
     binfile.open(params.bin_file, std::ios::out | std::ios::app | std::ios::binary);
   }
 
-  for (int i = 0; i < params.N; i++) {
+  /*
+    the crop percentage will be used to:
+      - in this function: to exclude from output half of (cropPercentage * bins) on each side of the FFT
+      - in function Plan(): only if hops are performed: calculate a frequency offset by which the center frequency
+        of each hop scan should be lowered in order to produce a continuous and not overlapping
+        series of bins for the overall frequency range
+  */
+  if( (params.freq_hopping_isSet) && (hops > 1) && (params.cropPercentage > 0) )
+  {
+    excludedBINS = int( params.cropPercentage * params.N / 100 ) / 2;
+    initialBIN = excludedBINS + 1;
+    finalBIN = params.N - excludedBINS;
+  }
+  else
+  {
+    excludedBINS = 0;
+    initialBIN = 0;
+    finalBIN = params.N ;
+  }
+  //for (int i = 0; i < params.N; i++) {
+  for (int i = initialBIN; i < finalBIN; i++) {
+
     freq = tuned_freq + (i - params.N/2.0) * actual_samplerate / params.N;
+
     if( params.linear ) {
       pwrdb = (data.pwr[i] / data.repeats_done / params.N / actual_samplerate)
                      - (params.baseline ? aux.baseline_values[i] : 0);

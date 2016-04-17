@@ -44,8 +44,12 @@ float sumScanDur = 0.0;
 time_t scanEnd, scanBeg;
 int tunfreq;
 int startFreq, endFreq, stepFreq;
+int hops;
 std::string firstAcqTimestamp, lastAcqTimestamp;
 int cntTimeStamps;
+int actual_samplerate;
+int excludedBINS = 0;
+double cropFreqOffset = 0.0;
 
 int main(int argc, char **argv)
 {
@@ -98,7 +102,7 @@ int main(int argc, char **argv)
 
     // Set sample rate
     rtldev.set_sample_rate(params.sample_rate);
-    int actual_samplerate = rtldev.sample_rate();
+    actual_samplerate = rtldev.sample_rate();
     std::cerr << "Actual sample rate: " << actual_samplerate << " Hz" << std::endl;
 
     // Create a plan of the operation. This will calculate the number of repeats,
@@ -154,10 +158,10 @@ int main(int argc, char **argv)
         // only once per run
         if(params.matrixMode && freqsMetaNeeded) {
           tunfreq = *plan.freqs_to_tune.begin();
-          startFreq = tunfreq + (0 - params.N/2.0) * actual_samplerate / params.N;
+          startFreq = params.startfreq;
           tunfreq = plan.freqs_to_tune.back();
-          endFreq   = tunfreq + ((params.N - 1) - params.N/2.0) * actual_samplerate / params.N;
           stepFreq = actual_samplerate / params.N;
+          endFreq   = params.stopfreq;
 
           freqsMetaNeeded = false;
         }
@@ -216,6 +220,11 @@ int main(int argc, char **argv)
       metafile << avgScanDur << " # avgScanDur (sec)" << std::endl;
       metafile << firstAcqTimestamp << " # firstAcqTimestamp UTC" << std::endl;
       metafile << lastAcqTimestamp << " # lastAcqTimestamp UTC" << std::endl;
+      metafile << actual_samplerate << " # sampling rate Hz" << std::endl;
+      metafile << hops << " # number of tuner hops" << std::endl;
+      metafile << params.cropPercentage << " # crop percentage" << std::endl;
+      metafile << excludedBINS * 2 << " # crop related excluded bins on each FFT" << std::endl;
+      metafile << (-1) * cropFreqOffset << " # crop related frequency offset Hz" << std::endl;
       metafile.close();
     }
 

@@ -77,6 +77,9 @@ The program can be stopped gracefully by sending the SIGINT signal to it (pressi
 `-w <file|->`,  `--window <file|->`
 :   Use a window function, read data from a file or from standard input. See **BASELINE AND WINDOW FUNCTION DATA** below for format and further considerations.
 
+`-x <percent>`,  `--crop <percent>`
+:   Define crop percentage when frequency hopping (otherwise meaningless).
+
 `--`,  `--ignore_rest`
 :   Ignore the rest of the labeled arguments following this flag.
 

@@ -102,6 +102,8 @@ Params::Params(int argc, char** argv) {
     TCLAP::CmdLine cmd("Obtain power spectrum from RTL device using FFTW library.", ' ', "1.0-beta2");
     TCLAP::ValueArg<int> arg_buffers("","buffers","Number of read buffers (don't touch unless running out of memory).",false,buffers,"buffers");
     cmd.add( arg_buffers );
+    TCLAP::ValueArg<double> arg_cropPercentage("x","crop","Define crop percentage when frequency hopping (otherwise meaningless).",false, cropPercentage, "percent");
+    cmd.add( arg_cropPercentage );
     TCLAP::ValueArg<std::string> arg_window("w","window","Use window function, from file or stdin.",false,"","file|-");
     cmd.add( arg_window );
     TCLAP::ValueArg<std::string> arg_integration_time("t","time","Integration time (incompatible with -n).",false,"","seconds");
@@ -161,6 +163,7 @@ Params::Params(int argc, char** argv) {
     talkless = arg_quiet.getValue();
     strict_time = arg_strict_time.getValue();
     min_overlap = arg_min_overlap.getValue();
+    cropPercentage = arg_cropPercentage.getValue();
     //clipped_output_isSet = arg_clipped.getValue();
 
     // Due to USB specifics, buffer length for reading rtl_sdr device
@@ -250,6 +253,12 @@ Params::Params(int argc, char** argv) {
       matrix_file = arg_matrixMode.getValue();
       bin_file = matrix_file + ".bin";
       meta_file = matrix_file + ".met";
+    }
+
+    if (arg_min_overlap.isSet() + arg_cropPercentage.isSet() > 1) {
+      throw RPFexception(
+        "Options -o and -x are mutually exclusive. Exiting.",
+        ReturnValue::InvalidArgument);
     }
 
     if (arg_session_duration.isSet()) {

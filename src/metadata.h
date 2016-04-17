@@ -27,9 +27,13 @@
 
 extern int metaCols, metaRows;
 extern int startFreq, endFreq, stepFreq;
+extern int hops;
 extern time_t scanEnd, scanBeg;
 extern float avgScanDur, sumScanDur;
 extern std::string firstAcqTimestamp, lastAcqTimestamp;
 extern int cntTimeStamps;
+extern int actual_samplerate;
+extern int excludedBINS;
+extern double cropFreqOffset;
 
 #endif // METADATA_H

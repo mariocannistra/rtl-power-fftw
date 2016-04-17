@@ -43,6 +43,7 @@ public:
   int buf_length = base_buf * default_buf_multiplier;
   bool buf_length_isSet = false;
   double min_overlap = 0;
+  double cropPercentage = 0;
   int ppm_error = 0;
   bool endless = false;
   bool strict_time = false;
