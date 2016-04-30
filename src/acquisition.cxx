@@ -188,13 +188,24 @@ Plan::Plan(Params& params_, int actual_samplerate_) :
   // We're stuffing a vector full of frequencies that we wish to eventually tune to.
   if (params.freq_hopping_isSet) {
     min_overhang = actual_samplerate*params.min_overlap/100;
+
     if( params.cropPercentage > 0 )
     {
       // since overlap and crop are mutually exclusive options,
       // I'm reusing the min_overhang variable for the crop frequency offset mentioned above
-      min_overhang = actual_samplerate*params.cropPercentage/100;
-      cropFreqOffset = min_overhang;  // will bring this out as metadata
+      if( double(params.stopfreq - params.startfreq) > double(actual_samplerate) )
+      {
+        // we shift down frequency only if we are hopping:
+        min_overhang = actual_samplerate*params.cropPercentage/100;
+        cropFreqOffset = min_overhang;  // will bring this out as metadata
+      }
+      else
+      {
+        min_overhang = 0;
+        cropFreqOffset = min_overhang;  // will bring this out as metadata
+      }
     }
+
     hops = ceil((double(params.stopfreq - params.startfreq) - min_overhang) / (double(actual_samplerate) - min_overhang));
     if (hops > 1) {
       int overhang = (hops*actual_samplerate - (params.stopfreq - params.startfreq)) / (hops - 1);
@@ -411,7 +422,7 @@ void Acquisition::write_data() const {
         of each hop scan should be lowered in order to produce a continuous and not overlapping
         series of bins for the overall frequency range
   */
-  if( (params.freq_hopping_isSet) && (hops > 1) && (params.cropPercentage > 0) )
+  if( (params.freq_hopping_isSet) && (params.cropPercentage > 0) )
   {
     excludedBINS = int( params.cropPercentage * params.N / 100 ) / 2;
     initialBIN = excludedBINS + 1;
