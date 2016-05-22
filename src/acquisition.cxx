@@ -354,7 +354,8 @@ void Acquisition::run() {
       break;
 
     // See if we have been instructed to conclude this measurement immediately.
-    if (interrupts && checkInterrupt(InterruptState::FinishNow))
+    //if (interrupts && checkInterrupt(InterruptState::FinishNow))
+    if (got_sighup || got_sigint)
         break;
   }
 

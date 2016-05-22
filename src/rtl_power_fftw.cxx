@@ -50,6 +50,9 @@ int cntTimeStamps;
 int actual_samplerate;
 int excludedBINS = 0;
 double cropFreqOffset = 0.0;
+int got_sighup = false;
+int got_sigint = false;
+bool already_hooked_up = false;
 
 int main(int argc, char **argv)
 {
@@ -116,7 +119,8 @@ int main(int argc, char **argv)
     Datastore data(params, auxData.window_values);
 
     // Install a signal handler for detecting Ctrl+C.
-    set_CtrlC_handler(true);
+    // set_CtrlC_handler(true);
+	HookupHandler();
 
     if(params.session_duration_isSet) {
       // calculate at which time we have to stop looping
@@ -173,7 +177,8 @@ int main(int argc, char **argv)
         if( (params.outcnt == 0 && params.talkless) || (params.talkless==false) ) data.printQueueHistogram();
 
         // Check for interrupts.
-        if (checkInterrupt(InterruptState::FinishNow))
+        //if (checkInterrupt(InterruptState::FinishNow))
+		if (got_sighup || got_sigint)
           break;
       }
 
@@ -185,12 +190,10 @@ int main(int argc, char **argv)
         if (time(NULL) >= exit_time) {
     			do_exit = true;
           std::cerr << "Session duration elapsed." << std::endl;
-          // Mark the end of a measurement set with an additional empty line
-          // (one was already output as a terminator for the last data set).
-          std::cout << std::endl;
         }
       }
-      else
+
+	  if( !params.matrixMode )
       {
         // Mark the end of a measurement set with an additional empty line
         // (one was already output as a terminator for the last data set).
@@ -204,7 +207,8 @@ int main(int argc, char **argv)
       }
 
       // unless you hit ctrl-c :
-      if(checkInterrupt(InterruptState::FinishPass)) do_exit = true;
+      //if(checkInterrupt(InterruptState::FinishPass)) do_exit = true;
+	  if (got_sighup || got_sigint) do_exit = true;
 
     } while ( !do_exit );
 

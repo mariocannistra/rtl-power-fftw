@@ -29,9 +29,12 @@ enum class InterruptState {
 };
 
 extern std::atomic<int> interrupts;
+extern int got_sighup;
+extern int got_sigint;
+extern bool already_hooked_up;
 
-void CtrlC_handler(int signal);
-void set_CtrlC_handler(bool install);
-bool checkInterrupt(InterruptState checkLevel);
+void handle_signal(int signal);
+void HookupHandler();
+void UnhookHandler();
 
 #endif // INTERRUPTS_H

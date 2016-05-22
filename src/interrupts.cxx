@@ -22,35 +22,73 @@
 
 #include "interrupts.h"
 
-std::atomic<int> interrupts(0);
 
-// Signal handler that will get invoked on Ctrl+C
-void CtrlC_handler(int signal) {
-  if (++interrupts == static_cast<int>(InterruptState::FinishNow))
-    set_CtrlC_handler(false);
+void handle_signal(int signal) {
+    switch (signal) {
+#ifdef _WIN32
+		case SIGTERM:
+		case SIGABRT:
+		case SIGBREAK:
+#else
+		case SIGHUP:
+#endif
+		  got_sighup = true;
+		  std::cerr << "\nInterrupted, finishing now.\n" << std::endl;
+		  break;
+		case SIGINT:
+		  got_sigint = true;
+		  std::cerr << "\nInterrupted, finishing now.\n" << std::endl;
+		  break;
+    }
 }
 
-void set_CtrlC_handler(bool install) {
-  struct sigaction action;
-  action.sa_handler = (install ? &CtrlC_handler : SIG_DFL);
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
-  sigaction(SIGINT, &action, nullptr);
+void HookupHandler() {
+    already_hooked_up = true;
+#ifdef _WIN32
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+    signal(SIGABRT, handle_signal);
+#else
+    struct sigaction sa;
+    // Setup the handler
+    sa.sa_handler = &handle_signal;
+    // Restart the system call, if at all possible
+    sa.sa_flags = SA_RESTART;
+    // Block every signal during the handler
+    sigfillset(&sa.sa_mask);
+    // Intercept SIGHUP and SIGINT
+    if (sigaction(SIGHUP, &sa, NULL) == -1) {
+      std::cerr << "Cannot install SIGHUP handler." << std::endl;
+    }
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+      std::cerr << "Cannot install SIGINT handler." << std::endl;
+    }
+#endif
 }
 
-bool checkInterrupt(InterruptState checkLevel) {
-  static int reportedInterrupts = 0;
-  const int currentInterrupts = interrupts;
+void UnhookHandler() {
+    if (already_hooked_up) {
+#ifdef _WIN32
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGABRT, SIG_DFL);
+#else
+      struct sigaction sa;
+      // Setup the sighub handler
+      sa.sa_handler = SIG_DFL;
+      // Restart the system call, if at all possible
+      sa.sa_flags = SA_RESTART;
+      // Block every signal during the handler
+      sigfillset(&sa.sa_mask);
+      // Intercept SIGHUP and SIGINT
+      if (sigaction(SIGHUP, &sa, NULL) == -1) {
+        std::cerr << "Cannot uninstall SIGHUP handler." << std::endl;
+      }
+      if (sigaction(SIGINT, &sa, NULL) == -1) {
+        std::cerr << "Cannot uninstall SIGINT handler." << std::endl;
+      }
+#endif
 
-  while (reportedInterrupts < currentInterrupts) {
-    reportedInterrupts++;
-    auto state = static_cast<InterruptState>(reportedInterrupts);
-
-    if (state == InterruptState::FinishPass)
-      std::cerr << "Interrupted, will try to finish this pass." << std::endl;
-    else if (state == InterruptState::FinishNow)
-      std::cerr << "Interrupted, finishing now." << std::endl;
-  }
-
-  return currentInterrupts >= static_cast<int>(checkLevel);
+      already_hooked_up = false;
+    }
 }
