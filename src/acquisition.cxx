@@ -54,6 +54,7 @@ std::vector<T> read_inputfile(std::istream* stream) {
     // As long as we end up with the right number of values, we're game.
     if (valuesRead > 0)
       values.push_back(value);
+
   }
   return values;
 }
@@ -61,6 +62,9 @@ std::vector<T> read_inputfile(std::istream* stream) {
 AuxData::AuxData(const Params& params) {
   std::istream* stream;
   std::ifstream fs;
+  
+  int suitableValues;
+
   // Window function and baseline correction
   // If both are read from stdin, we read it all in one go,
   // and see if the total number of values adds up to what we need.
@@ -141,13 +145,22 @@ AuxData::AuxData(const Params& params) {
         stream = &fs;
       }
       baseline_values = read_inputfile<double>(stream);
+
+	  if(hops>1) {
+		  suitableValues = ( params.N - int( params.cropPercentage * params.N / 100 ) ) * hops;
+	  }
+	  else
+	  {
+		  suitableValues = params.N - int( params.cropPercentage * params.N / 100 );
+	  }
+	  
       // Check for suitability.
-      if ((int)baseline_values.size() == params.N) {
+      if ((int)baseline_values.size() == suitableValues) {
         std::cerr << "Succesfully read " << baseline_values.size() << " baseline points." << std::endl;
       }
       else {
         throw RPFexception(
-          "Error reading baseline. Expected " + std::to_string(params.N)
+          "Error reading baseline. Expected " + std::to_string(suitableValues)
           + " values, found " + std::to_string(baseline_values.size()) + ".",
           ReturnValue::InvalidInput);
       }
@@ -225,6 +238,7 @@ Plan::Plan(Params& params_, int actual_samplerate_) :
 }
 
 void Plan::print() const {
+    std::cerr << "Planned hops: " << hops << std::endl;
     std::cerr << "Number of bins: " << params.N << std::endl;
     std::cerr << "Total number of (complex) samples to collect: " << (int64_t)params.N*params.repeats << std::endl;
     std::cerr << "Buffer length: " << params.buf_length << std::endl;
@@ -280,7 +294,8 @@ void Acquisition::run() {
   data.acquisition_finished = false;
   data.repeats_done = 0;
 
-  std::thread t(&Datastore::fftThread, std::ref(data));
+  //std::thread t(&Datastore::fftThread, std::ref(data));
+  std::thread t(&Datastore::fftThread, &data);
 
   // Record the start-of-acquisition timestamp.
   startAcqTimestamp = currentDateTime();
@@ -391,7 +406,7 @@ void Acquisition::write_data() const {
   double pwrdb = 0.0;
   float fpwrdb = 0.0;
   double freq = 0.0;
-  int initialBIN, finalBIN;
+  int initialBIN, finalBIN, baselineOffset;
 
   if(!params.matrixMode) {
     // Print the header
@@ -422,19 +437,28 @@ void Acquisition::write_data() const {
       - in function Plan(): only if hops are performed: calculate a frequency offset by which the center frequency
         of each hop scan should be lowered in order to produce a continuous and not overlapping
         series of bins for the overall frequency range
+	  - calculate the index offset when subtracting the baseline values
   */
   if( (params.freq_hopping_isSet) && (params.cropPercentage > 0) )
   {
     excludedBINS = int( params.cropPercentage * params.N / 100 ) / 2;
-    initialBIN = excludedBINS + 1;
+    initialBIN = excludedBINS;
     finalBIN = params.N - excludedBINS;
+
+	actualBINS = (params.N - (excludedBINS * 2)) * hops;
+	baselineOffset = (params.N - (excludedBINS * 2)) * (currentHopNumber - 1);
   }
   else
   {
     excludedBINS = 0;
     initialBIN = 0;
     finalBIN = params.N ;
+
+	actualBINS = params.N;
+	// 0 offset for single hop scans
+	baselineOffset = 0;
   }
+
   //for (int i = 0; i < params.N; i++) {
   for (int i = initialBIN; i < finalBIN; i++) {
 
@@ -442,11 +466,11 @@ void Acquisition::write_data() const {
 
     if( params.linear ) {
       pwrdb = (data.pwr[i] / data.repeats_done / params.N / actual_samplerate)
-                     - (params.baseline ? aux.baseline_values[i] : 0);
+                     - (params.baseline ? aux.baseline_values[baselineOffset+i-excludedBINS] : 0);
     }
     else {
-      pwrdb = 10*log10(data.pwr[i] / data.repeats_done / params.N / actual_samplerate)
-                     - (params.baseline ? aux.baseline_values[i] : 0);
+      pwrdb = (10*log10(data.pwr[i] / data.repeats_done / params.N / actual_samplerate))
+                     - (params.baseline ? aux.baseline_values[baselineOffset+i-excludedBINS] : 0);
     }
     if( params.matrixMode ) {
       // we are accumulating a double, so 8 bytes, removed the sizeof()
@@ -454,9 +478,6 @@ void Acquisition::write_data() const {
       // binary file size for 15 mins with N=100 now 43.4 MB instead of 86.8 MB )
       fpwrdb=pwrdb;
       binfile.write( (char*)&fpwrdb, 4 );
-      if(metaRows==1) {
-          metaCols = metaCols + 1;
-      }
     }
     else
     {
@@ -471,9 +492,6 @@ void Acquisition::write_data() const {
 
   if( params.matrixMode ) {
     binfile.close();
-    if( tuned_freq >= params.finalfreq ) {
-      metaRows = metaRows + 1;
-    }
   }
 
   if( !params.matrixMode ) {

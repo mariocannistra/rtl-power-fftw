@@ -37,7 +37,7 @@
 #include <time.h>
 
 std::ofstream binfile, metafile;
-int metaRows = 1;
+int metaRows = 0;
 int metaCols = 0;
 float avgScanDur = 0.0;
 float sumScanDur = 0.0;
@@ -45,10 +45,12 @@ time_t scanEnd, scanBeg;
 int tunfreq;
 int startFreq, endFreq, stepFreq;
 int hops;
+int currentHopNumber;
 std::string firstAcqTimestamp, lastAcqTimestamp;
 int cntTimeStamps;
 int actual_samplerate;
 int excludedBINS = 0;
+int actualBINS = 0;
 double cropFreqOffset = 0.0;
 int got_sighup = false;
 int got_sigint = false;
@@ -65,8 +67,6 @@ int main(int argc, char **argv)
   try {
     // Parse command line arguments.
     Params params(argc, argv);
-    // Read auxiliary data for window function and baseline correction.
-    AuxData auxData(params);
 
     // Set up RTL-SDR device.
     Rtlsdr rtldev(params.dev_index);
@@ -115,6 +115,13 @@ int main(int argc, char **argv)
     // Print info on capture time and associated specifics.
     plan.print();
 
+	// moved this step here since we need to know the number of planned hops
+	// in order to properly account for the number of needed baseline values
+	// matching the number of bins after the cropping if any:
+
+    // Read auxiliary data for window function and baseline correction.
+    AuxData auxData(params);
+	
     //Begin the work: prepare data buffers
     Datastore data(params, auxData.window_values);
 
@@ -138,8 +145,17 @@ int main(int argc, char **argv)
     params.finalfreq = plan.freqs_to_tune.back();
     //Read from device and do FFT
     do {
+	  currentHopNumber = 0;
       for (auto iter = plan.freqs_to_tune.begin(); iter != plan.freqs_to_tune.end();) {
-        // Begin a new data acquisition.
+		// we need to keep track of the current hop number
+		// to subtract from the corresponding section of baseline data
+		// in a multi-hop scenario
+		currentHopNumber = currentHopNumber + 1;
+
+		if( (params.outcnt == 0 && params.talkless) || (params.talkless==false) )
+			std::cerr << "\nHop # " << currentHopNumber << std::endl;
+
+		// Begin a new data acquisition.
         Acquisition acquisition(params, auxData, rtldev, data, actual_samplerate, *iter);
         try {
           // Read the required amount of data and process it.
@@ -172,6 +188,7 @@ int main(int argc, char **argv)
 
         // Write the gathered data to stdout.
         acquisition.write_data();
+		metaRows = metaRows + 1;
 
         // Print the histogram of the queue length to stderr.
         if( (params.outcnt == 0 && params.talkless) || (params.talkless==false) ) data.printQueueHistogram();
@@ -214,8 +231,8 @@ int main(int argc, char **argv)
 
     if(params.matrixMode) {
       metafile.open(params.meta_file, std::ios::out | std::ios::trunc );
-      metafile << metaCols << " # frequency bins (columns)" << std::endl;
-      metaRows = metaRows - 1; // let's fix the rows count since we start from 1
+      metafile << actualBINS << " # frequency bins (columns)" << std::endl;
+	  metaRows = metaRows / hops;	// in multi-hop scenarios every tune counts as an output row
       metafile << metaRows << " # scans (rows)" << std::endl;
       metafile << startFreq << " # startFreq (Hz)" << std::endl;
       metafile << endFreq << " # endFreq (Hz)" << std::endl;
